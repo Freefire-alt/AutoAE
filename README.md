@@ -1,5 +1,5 @@
 # AutoAE
-
+DEVELOPED BY RATAN KUMAR
 ## Automated Pharmacovigilance Case Analysis Tool
 
 AutoAE is a prototype pharmacovigilance support application built with Python and Streamlit.

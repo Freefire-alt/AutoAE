@@ -1,5 +1,6 @@
-import streamlit as st
 import re
+import streamlit as st
+import requests
 
 # ============================================================
 # AutoAE V2
@@ -11,17 +12,45 @@ st.set_page_config(
     page_icon="💊",
     layout="wide"
 )
+st.markdown("### DEVELOPED BY RATAN KUMAR")# =========================
+# PROFESSIONAL HEADER
+# =========================
 
+st.markdown("""
+<style>
+.main-title {
+    font-size: 42px;
+    font-weight: 700;
+    margin-bottom: 0px;
+}
+
+.subtitle {
+    font-size: 20px;
+    margin-top: 0px;
+    margin-bottom: 5px;
+}
+
+.developer {
+    font-size: 15px;
+    margin-bottom: 25px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">💊 AutoAE V2</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="subtitle">Automated Pharmacovigilance Case Analysis Tool</div>',
+    unsafe_allow_html=True
+)
+st.markdown(
+    '<div class="developer">Developed by <b>Ratan Kumar</b></div>',
+    unsafe_allow_html=True
+)
 # ============================================================
 # HEADER
 # ============================================================
 
-st.title("💊 AutoAE V2")
-st.subheader("AI-Assisted Pharmacovigilance Case Processing Tool")
-st.write(
-    "Automated extraction of patient, reporter, drug and adverse-event "
-    "information with MedDRA mapping and ICSR validity assessment."
-)
+
 
 st.divider()
 
@@ -329,7 +358,85 @@ def check_validity(text, drugs, events, patient):
     }
 
     return criteria
+# ============================================================
+# PUBMED INTEGRATION
+# ============================================================
 
+def search_pubmed(query, max_results=5):
+    """
+    Search PubMed using NCBI E-utilities API.
+    Returns recent relevant article details.
+    """
+
+    if not query.strip():
+        return []
+
+    try:
+        search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+
+        search_params = {
+            "db": "pubmed",
+            "term": query,
+            "retmode": "json",
+            "retmax": max_results,
+            "sort": "relevance",
+            "tool": "AutoAE_V2"
+        }
+
+        search_response = requests.get(
+            search_url,
+            params=search_params,
+            timeout=10
+        )
+
+        search_response.raise_for_status()
+
+        pmids = search_response.json()["esearchresult"]["idlist"]
+
+        if not pmids:
+            return []
+
+        summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+
+        summary_params = {
+            "db": "pubmed",
+            "id": ",".join(pmids),
+            "retmode": "json",
+            "tool": "AutoAE_V2"
+        }
+
+        summary_response = requests.get(
+            summary_url,
+            params=summary_params,
+            timeout=10
+        )
+
+        summary_response.raise_for_status()
+
+        data = summary_response.json()["result"]
+
+        articles = []
+
+        for pmid in pmids:
+            article = data.get(pmid, {})
+
+            articles.append({
+                "pmid": pmid,
+                "title": article.get("title", "Title not available"),
+                "journal": article.get("fulljournalname", "Journal not available"),
+                "year": article.get("pubdate", "Year not available"),
+                "authors": ", ".join(
+                    author.get("name", "")
+                    for author in article.get("authors", [])
+                    if author.get("name")
+                )
+            })
+
+        return articles
+
+    except Exception as e:
+        st.warning(f"PubMed search unavailable: {e}")
+        return []
 
 # ============================================================
 # ANALYZE BUTTON
@@ -360,6 +467,27 @@ if st.button("🔍 Analyze Case", type="primary"):
             drugs,
             events,
             patient
+        )
+
+        # ----------------------------------------------------
+        # PUBMED LITERATURE SEARCH
+        # ----------------------------------------------------
+
+        pubmed_query_parts = []
+
+        if drugs:
+            pubmed_query_parts.extend(drugs)
+
+        if events:
+            pubmed_query_parts.extend(events)
+
+        pubmed_query = " AND ".join(
+            f'"{term}"' for term in pubmed_query_parts
+        )
+
+        pubmed_articles = search_pubmed(
+            pubmed_query,
+            max_results=5
         )
 
         # ====================================================
@@ -473,6 +601,53 @@ if st.button("🔍 Analyze Case", type="primary"):
                 st.write(f"✗ {criterion}: Not identified")
 
         all_four = all(validity.values())
+
+        # ====================================================
+        # PUBMED LITERATURE
+        # ====================================================
+
+        st.divider()
+
+        st.subheader("📚 PubMed Literature Search")
+
+        if pubmed_query:
+            st.caption(f"Search query: {pubmed_query}")
+
+            if pubmed_articles:
+
+                for article in pubmed_articles:
+
+                    st.markdown(
+                        f"### {article['title']}"
+                    )
+
+                    st.write(
+                        f"**Journal:** {article['journal']}"
+                    )
+
+                    st.write(
+                        f"**Publication:** {article['year']}"
+                    )
+
+                    if article["authors"]:
+                        st.write(
+                            f"**Authors:** {article['authors']}"
+                        )
+
+                    st.markdown(
+                        f"[View PubMed article](https://pubmed.ncbi.nlm.nih.gov/{article['pmid']}/)"
+                    )
+
+                    st.divider()
+
+            else:
+                st.info("No relevant PubMed articles found.")
+
+        else:
+            st.info(
+                "PubMed search requires at least one detected drug "
+                "or adverse event."
+            )
 
         if all_four:
 
